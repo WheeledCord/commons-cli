@@ -12,7 +12,7 @@ cd ../commons-api
 
 2. Install Python dependencies:
 ```bash
-../venv/bin/pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 3. Run the CLI client:
