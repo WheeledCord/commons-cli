@@ -7,18 +7,12 @@ terminal based chatroom client for commons.
 
 ## setup
 
-1. start the backend server:
-```bash
-cd commons-api
-./chatapp
-```
-
-2. install python dependencies:
+1. install python dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. run the client:
+2. run the client:
 ```bash
 python main.py
 ```
