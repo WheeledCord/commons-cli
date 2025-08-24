@@ -2,6 +2,9 @@
 
 Terminal-based chatroom client for commons.
 
+
+**IF YOU ARE LOOKING FOR THE API IT IS AT [https://github.com/WheeledCord/commons-api](https://github.com/WheeledCord/commons-api)!!!**
+
 ## Setup
 
 1. Start the backend server:
