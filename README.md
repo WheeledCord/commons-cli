@@ -17,4 +17,4 @@ pip install -r requirements.txt
 
 3. Run the CLI client:
 ```bash
-../venv/bin/python main.py
+python main.py
