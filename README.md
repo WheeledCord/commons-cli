@@ -16,3 +16,4 @@ pip install -r requirements.txt
 ```bash
 python main.py
 ```
+it is set automatically to point at my server. if you want it to go to yours set up [commons-api](https://github.com/WheeledCord/commons-api) and set it to point to localhost:8080 or whatever you use
