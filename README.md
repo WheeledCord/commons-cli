@@ -1,20 +1,23 @@
 # commons-cli
 
-Terminal-based chatroom client for commons.
+terminal based chatroom client for commons.
 
-## Setup
 
-1. Start the backend server:
+**IF YOU ARE LOOKING FOR THE API IT IS AT [https://github.com/WheeledCord/commons-api](https://github.com/WheeledCord/commons-api)!!!**
+
+## setup
+
+1. start the backend server:
 ```bash
 cd ../commons-api
 ./chatapp
 ```
 
-2. Install Python dependencies:
+2. install python dependencies:
 ```bash
 ../venv/bin/pip install -r requirements.txt
 ```
 
-3. Run the CLI client:
+3. run the client:
 ```bash
 ../venv/bin/python main.py
