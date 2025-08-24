@@ -11,8 +11,8 @@ import sys
 from urllib.parse import urlencode
 
 # Configuration
-SERVER_URL = "http://localhost:8080"
-WS_URL = "ws://localhost:8080/ws"
+SERVER_URL = "https://bigblackoiledup.men"
+WS_URL = "wss://bigblackoiledup.men/ws"
 
 # Global state
 token = None
@@ -21,6 +21,8 @@ halls = []
 current_hall = None
 current_rooms = []
 current_messages = []
+messages_offset = 0  # for lazy loading
+has_more_messages = True
 ws = None
 ws_connected = False
 
@@ -34,6 +36,7 @@ focus = FOCUS_HALLS
 sel_hall_idx = 0
 sel_room_idx = 0
 chat_scroll = 0
+chat_at_bottom = True  # track if user is viewing bottom messages
 input_buffer = ""
 status_message = ""
 
@@ -122,14 +125,36 @@ def load_rooms(hall_id):
     if current_rooms and sel_room_idx >= len(current_rooms):
         sel_room_idx = 0
 
-def load_messages(room_id):
+def load_messages(room_id, prepend=False):
     """Load recent messages for a room"""
-    global current_messages
-    result = api_request("GET", f"/api/messages/{room_id}?limit=50")
-    if "error" not in result:
-        current_messages = result.get("messages", [])
+    global current_messages, messages_offset, has_more_messages
+    
+    if not prepend:
+        # loading new room - start fresh
+        messages_offset = 0
+        has_more_messages = True
+        
+        result = api_request("GET", f"/api/messages/{room_id}?limit=50&offset=0")
+        if "error" not in result:
+            messages = result.get("messages", [])
+            current_messages = messages
+            has_more_messages = len(messages) == 50
+            messages_offset = len(messages)
+        else:
+            current_messages = []
+            has_more_messages = False
     else:
-        current_messages = []
+        # load older messages and prepend them
+        result = api_request("GET", f"/api/messages/{room_id}?limit=50&offset={messages_offset}")
+        if "error" not in result:
+            messages = result.get("messages", [])
+            if messages:
+                # prepend older messages to the beginning
+                current_messages = messages + current_messages
+                messages_offset += len(messages)
+                has_more_messages = len(messages) == 50
+            else:
+                has_more_messages = False
 
 def is_user_admin():
     """Check if current user is admin of current hall"""
@@ -270,6 +295,26 @@ def delete_hall():
     sel_hall_idx = 0
     
     status_message = "Hall deleted successfully"
+    return True
+
+def leave_hall():
+    """Leave current hall"""
+    global status_message, current_hall, halls, sel_hall_idx
+    if not current_hall:
+        status_message = "No hall selected"
+        return False
+    
+    result = api_request("POST", "/api/halls/leave", {"hall_id": current_hall['id']})
+    if "error" in result:
+        status_message = f"Error: {result['error']}"
+        return False
+    
+    # Reload halls and reset selection
+    load_halls()
+    current_hall = None
+    sel_hall_idx = 0
+    
+    status_message = "Left hall successfully"
     return True
 
 def start_websocket():
@@ -498,7 +543,7 @@ def draw_rooms(stdscr, h, halls_w, rooms_w):
             pass
 
 def draw_chat(stdscr, h, w, halls_w, rooms_w, chat_w):
-    global chat_scroll
+    global chat_scroll, chat_at_bottom
     x = 1 + halls_w + 1 + rooms_w + 1
     y_start = 1
     y_end = h - 4
@@ -513,7 +558,16 @@ def draw_chat(stdscr, h, w, halls_w, rooms_w, chat_w):
         lines += textwrap.wrap(f"{username}: {content}", wrap_width)
 
     max_scroll = max(0, len(lines) - height)
+    
+    # auto-scroll to bottom if user was at bottom and there are new messages
+    if chat_at_bottom:
+        chat_scroll = max_scroll
+    
     chat_scroll = max(0, min(chat_scroll, max_scroll))
+    
+    # update bottom tracking based on current scroll position
+    chat_at_bottom = (chat_scroll >= max_scroll)
+    
     visible = lines[chat_scroll: chat_scroll + height]
 
     for i in range(height):
@@ -537,7 +591,7 @@ def draw_input(stdscr, h, halls_w, rooms_w, chat_w):
 
 def draw_form_screen(stdscr, h, w, title, field1_label, field2_label=None):
     """Draw form screen for hall creation/joining"""
-    stdscr.clear()
+    stdscr.erase()
     
     try:
         # Title
@@ -565,7 +619,7 @@ def draw_form_screen(stdscr, h, w, title, field1_label, field2_label=None):
 
 def draw_settings_screen(stdscr, h, w):
     """Draw settings panel screen"""
-    stdscr.clear()
+    stdscr.erase()
     
     try:
         center_write(stdscr, 2, 0, w, "SETTINGS", curses.A_BOLD)
@@ -578,34 +632,39 @@ def draw_settings_screen(stdscr, h, w):
             stdscr.addstr(5, 4, f"Invite Code: {current_hall['invite_code']}")
             stdscr.addstr(6, 4, f"Room Count: {len(current_rooms)}")
             
+            # Show all available options
+            stdscr.addstr(8, 4, "Options:", curses.A_BOLD)
+            options = ["Leave Hall"]
+            
             if is_user_admin():
-                # Show admin options for hall owners
-                stdscr.addstr(8, 4, "Admin Options:", curses.A_BOLD)
-                admin_options = ["Create Room", "Delete Room", "Delete Hall", "Give Admin Rights", "Generate New Invite"]
-                for i, option in enumerate(admin_options):
-                    attr = curses.A_REVERSE if form_focus == i else 0
-                    stdscr.addstr(10 + i, 6, f"{i+1}. {option}", attr)
+                # Add admin options for hall owners
+                options.extend(["Create Room", "Delete Room", "Delete Hall", "Give Admin Rights", "Generate New Invite"])
+            
+            options.append("Back to Chat")
+            
+            for i, option in enumerate(options):
+                attr = curses.A_REVERSE if form_focus == i else 0
+                stdscr.addstr(10 + i, 6, f"{i+1}. {option}", attr)
                 
-                # Back to Chat option
-                back_attr = curses.A_REVERSE if form_focus == len(admin_options) else 0
-                stdscr.addstr(10 + len(admin_options) + 1, 4, f"{len(admin_options)+1}. Back to Chat", back_attr)
-                
-                # Input fields based on selected option
+            # Input fields based on selected option (only for admin options that need input)
+            if is_user_admin():
                 input_y = 17
-                if form_focus == 0:  # Create room
+                if form_focus == 1:  # Create room
                     stdscr.addstr(input_y, 4, "Room name:")
                     stdscr.addstr(input_y + 1, 4, f"[{form_input.ljust(30)}]", curses.A_REVERSE)
-                elif form_focus == 1:  # Delete room
+                elif form_focus == 2:  # Delete room
                     stdscr.addstr(input_y, 4, "Room name to delete:")
                     stdscr.addstr(input_y + 1, 4, f"[{form_input.ljust(30)}]", curses.A_REVERSE)
-                elif form_focus == 3:  # Give admin rights
+                elif form_focus == 4:  # Give admin rights
                     stdscr.addstr(input_y, 4, "Username:")
                     stdscr.addstr(input_y + 1, 4, f"[{form_input.ljust(30)}]", curses.A_REVERSE)
             else:
-                # Non-admin users just see hall info
-                stdscr.addstr(8, 4, "You are a member of this hall.")
-                back_attr = curses.A_REVERSE if form_focus == 0 else 0
-                stdscr.addstr(10, 4, "1. Back to Chat", back_attr)
+                # Non-admin users can leave the hall
+                stdscr.addstr(8, 4, "Options:", curses.A_BOLD)
+                options = ["Leave Hall", "Back to Chat"]
+                for i, option in enumerate(options):
+                    attr = curses.A_REVERSE if form_focus == i else 0
+                    stdscr.addstr(10 + i, 6, f"{i+1}. {option}", attr)
         else:
             # No hall selected
             stdscr.addstr(4, 4, "No hall selected. Please select a hall first.")
@@ -621,8 +680,9 @@ def draw_settings_screen(stdscr, h, w):
         pass
 
 def handle_main_key(key):
-    global focus, sel_hall_idx, sel_room_idx, chat_scroll, input_buffer
+    global focus, sel_hall_idx, sel_room_idx, chat_scroll, input_buffer, chat_at_bottom
     global current_hall, current_mode, form_input, form_input2, form_focus
+    global has_more_messages, current_messages, current_rooms
     
     if key == 9:  # Tab
         max_focus = FOCUS_SETTINGS  # Settings available to all users
@@ -691,12 +751,32 @@ def handle_main_key(key):
     elif focus == FOCUS_CHAT:
         if key == curses.KEY_DOWN: 
             chat_scroll += 1
+            chat_at_bottom = False  # user manually scrolled
         elif key == curses.KEY_UP: 
+            # check if we need to load more messages before scrolling up
+            if chat_scroll <= 5 and has_more_messages and current_rooms and sel_room_idx < len(current_rooms):
+                room = current_rooms[sel_room_idx]
+                old_msg_count = len(current_messages)
+                load_messages(room["id"], prepend=True)
+                # adjust scroll to maintain position after prepending messages
+                new_msg_count = len(current_messages)
+                chat_scroll += new_msg_count - old_msg_count
             chat_scroll -= 1
+            chat_at_bottom = False  # user manually scrolled
         elif key == curses.KEY_NPAGE: 
             chat_scroll += 5
+            chat_at_bottom = False  # user manually scrolled
         elif key == curses.KEY_PPAGE: 
+            # check if we need to load more messages before scrolling up
+            if chat_scroll <= 10 and has_more_messages and current_rooms and sel_room_idx < len(current_rooms):
+                room = current_rooms[sel_room_idx]
+                old_msg_count = len(current_messages)
+                load_messages(room["id"], prepend=True)
+                # adjust scroll to maintain position after prepending messages
+                new_msg_count = len(current_messages)
+                chat_scroll += new_msg_count - old_msg_count
             chat_scroll -= 1
+            chat_at_bottom = False  # user manually scrolled
 
     elif focus == FOCUS_INPUT:
         if key in (curses.KEY_ENTER, 10, 13):
@@ -774,9 +854,14 @@ def handle_settings_key(key):
         status_message = ""
         return
     
-    if current_hall and is_user_admin():
-        # Admin users have more options
-        max_options = 6  # Create, Delete Room, Delete Hall, Give Admin, Generate Invite, Back
+    if current_hall:
+        # Calculate available options based on user role
+        options = ["Leave Hall"]
+        if is_user_admin():
+            options.extend(["Create Room", "Delete Room", "Delete Hall", "Give Admin Rights", "Generate New Invite"])
+        options.append("Back to Chat")
+        
+        max_options = len(options)
         
         if key == curses.KEY_UP:
             form_focus = (form_focus - 1) % max_options
@@ -786,39 +871,59 @@ def handle_settings_key(key):
             form_input = ""
         
         if key in (curses.KEY_ENTER, 10, 13):
-            if form_focus == 0:  # Create room
+            if form_focus == 0:  # Leave Hall (always first option)
+                if leave_hall():
+                    current_mode = MODE_MAIN
+                    form_input = ""
+            elif is_user_admin() and form_focus == 1:  # Create room
                 if form_input.strip():
                     if create_room():
                         form_input = ""
-            elif form_focus == 1:  # Delete room
+            elif is_user_admin() and form_focus == 2:  # Delete room
                 if form_input.strip():
                     if delete_room():
                         form_input = ""
-            elif form_focus == 2:  # Delete hall
+            elif is_user_admin() and form_focus == 3:  # Delete hall
                 if delete_hall():
                     current_mode = MODE_MAIN
                     form_input = ""
-            elif form_focus == 3:  # Give admin rights
+            elif is_user_admin() and form_focus == 4:  # Give admin rights
                 if form_input.strip():
                     if give_admin_rights():
                         form_input = ""
-            elif form_focus == 4:  # Generate invite
+            elif is_user_admin() and form_focus == 5:  # Generate invite
                 if regenerate_invite():
                     pass  # No input needed
-            elif form_focus == 5:  # Back
+            elif form_focus == len(options) - 1:  # Back (always last option)
                 current_mode = MODE_MAIN
                 form_input = ""
                 status_message = ""
             return
         
-        # Handle input for text fields (create room, delete room, give admin)
-        if form_focus in [0, 1, 3]:  # Skip delete hall (index 2) and generate invite (index 4)
+        # Handle input for text fields (admin options that need input)
+        if is_user_admin() and form_focus in [1, 2, 4]:  # Create room, Delete room, Give admin
             if key in (curses.KEY_BACKSPACE, 127, 8):
                 form_input = form_input[:-1]
             elif 32 <= key <= 126:
-                form_input += chr(key)
+                char = chr(key)
+                if form_focus == 1:  # Create room - special handling
+                    # Convert to lowercase
+                    char = char.lower()
+                    # Convert spaces to dashes
+                    if char == " ":
+                        char = "-"
+                    # Filter out invalid symbols (!@#$%^&*()_=) but allow dashes
+                    if char not in "!@#$%^&*()_=":
+                        # Handle dash spacing rules
+                        if char == "-" and (form_input == "" or form_input.endswith("-")):
+                            pass  # don't add dash at start or double dashes
+                        elif len(form_input) < 19:  # limit to 19 chars (server adds # = 20 total)
+                            form_input += char
+                else:
+                    # Normal input for other fields
+                    form_input += char
     else:
-        # Non-admin users or no hall selected - only Back option
+        # No hall selected - only Back option
         if key in (curses.KEY_ENTER, 10, 13):
             current_mode = MODE_MAIN
             form_input = ""
@@ -835,11 +940,12 @@ def hall_changed():
 
 def room_changed():
     """Called when room selection changes"""
-    global chat_scroll
+    global chat_scroll, chat_at_bottom
     if current_rooms and sel_room_idx < len(current_rooms):
         room = current_rooms[sel_room_idx]
         load_messages(room["id"])
         chat_scroll = 0
+        chat_at_bottom = True  # start at bottom for new rooms
         join_room_ws()
 
 def tui_main(stdscr):
@@ -861,7 +967,7 @@ def tui_main(stdscr):
         ws_thread.start()
 
     while True:
-        stdscr.clear()
+        stdscr.erase()
         h, w = stdscr.getmaxyx()
 
         # Handle different UI modes
@@ -881,7 +987,8 @@ def tui_main(stdscr):
                     stdscr.addstr(0, 0, msg[:w-1])
                 except curses.error:
                     pass
-                stdscr.refresh()
+                stdscr.noutrefresh()
+                curses.doupdate()
                 key = stdscr.getch()
                 if key == 27:
                     break
@@ -899,7 +1006,8 @@ def tui_main(stdscr):
             draw_input(stdscr, h, halls_w, rooms_w, chat_w)
             draw_status_top_right(stdscr, w)
 
-        stdscr.refresh()
+        stdscr.noutrefresh()
+        curses.doupdate()
 
         try:
             key = stdscr.getch()
