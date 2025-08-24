@@ -9,7 +9,7 @@ terminal based chatroom client for commons.
 
 1. start the backend server:
 ```bash
-cd ../commons-api
+cd commons-api
 ./chatapp
 ```
 
