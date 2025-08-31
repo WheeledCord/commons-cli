@@ -1,19 +1,30 @@
 # commons-cli
 
-terminal based chatroom client for commons.
+Terminal-based chat client for Commons with real-time messaging support.
 
+## Installation
 
-**IF YOU ARE LOOKING FOR THE API IT IS AT [https://github.com/WheeledCord/commons-api](https://github.com/WheeledCord/commons-api)!!!**
+### From PyPI (recommended)
+```bash
+pip install commons-cli
+```
 
-## setup
+Then run:
+```bash
+commons-cli
+# or
+commons
+```
 
-1. install python dependencies:
+## Development
+
+### Local Setup
+1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. run the client:
+2. Run from source:
 ```bash
 python main.py
 ```
-it is set automatically to point at my server. if you want it to go to yours set up [commons-api](https://github.com/WheeledCord/commons-api) and set it to point to ``localhost:8080`` or whatever you use
