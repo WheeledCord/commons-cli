@@ -1,6 +1,6 @@
 # commons-cli
 
-Terminal-based chat client for Commons with real-time messaging support.
+Terminal based chat client for Commons.
 
 ## Installation
 
