@@ -1,6 +1,6 @@
 # commons-cli
 
-Terminal based chat client for Commons, a minimalistic chat application backend built in Go with SQLite. Supports multiple clients via json over http and websockets.
+Terminal based chat client made in Python with curses for Commons, a minimalistic chat application backend built in Go with SQLite. Supports multiple clients via json over http and websockets.
 
 <img width="1018" height="763" alt="image" src="https://github.com/user-attachments/assets/19727ff9-ded4-46fa-864b-16a5e595cffd" />
 
